@@ -4,33 +4,37 @@ import { getBorderCharacters, table } from "table";
 $.verbose = false;
 const numberFormatter = new Intl.NumberFormat("de-DE");
 
+const DIR = (await $`pwd`).stdout.replace("\n", "");
 const REPOS_PATH = "repositories";
 await fs.mkdirp(REPOS_PATH);
 
 const defaultClocArgs = [
   "--vcs=git",
   "--exclude-lang=XML,Markdown,SVG,JSON,SQL,TeX,Text,PlantUML,CSV,HTML,Dockerfile",
-  "--force-lang-def=../../cloc_lang_def.txt",
+  `--force-lang-def=${DIR}/cloc_lang_def.txt`,
   "--no-autogen",
   "--fullpath",
   "--json",
 ];
 
-cd(REPOS_PATH);
-
 const tableData = [["Repository", new Date().toISOString().substring(0, 10), "2023-01-01", "2022-01-01", "2021-01-01"]];
 
-for (const url of argv._) {
-  const name = url.split("/").pop().replace(".git", "");
+for (const urlOrPath of argv._) {
+  const name = urlOrPath.split("/").pop().replace(".git", "");
   console.log(name);
 
-  if (!fs.pathExistsSync(name)) {
-    echo`pulling ${url}`;
-    await $`git clone ${url} ${name}`;
+  let path = urlOrPath;
+  if (urlOrPath.startsWith("ssh://")) {
+    path = `${REPOS_PATH}/${name}`;
+
+    if (!fs.pathExistsSync(path)) {
+      echo`pulling ${urlOrPath} into ${path}`;
+      await $`git clone ${urlOrPath} ${path}`;
+    }
   }
 
   await within(async () => {
-    cd(name);
+    cd(path);
 
     await $`git checkout master -f`;
     await $`git pull`;
@@ -71,8 +75,10 @@ async function getPastLOC(pastDate) {
 }
 
 async function getLOC() {
+  $.verbose = true;
   const clocOutput =
-    await $`cloc ${defaultClocArgs} --not-match-f=.\\(spec\\|stories\\|lock\\) --not-match-d=\\(test\\|mock\\|shared\\/shell\\)`;
+    await $`cloc ${defaultClocArgs} --not-match-f=.\\(spec\\|stories\\|lock\\) --not-match-d=\\(cypress\|test\\|mock\\|shared\\/shell\\)`;
+  $.verbose = false;
   const clocJson = JSON.parse(clocOutput.stdout);
 
   return Object.entries(clocJson)
