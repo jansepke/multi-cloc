@@ -17,14 +17,15 @@ const defaultClocArgs = [
   "--json",
 ];
 
-const tableData = [["Repository", new Date().toISOString().substring(0, 10), "2023-01-01", "2022-01-01", "2021-01-01"]];
+const pastYears = ["2024-01-01", "2023-01-01", "2022-01-01", "2021-01-01"];
+const tableData = [["Repository", new Date().toISOString().substring(0, 10), ...pastYears]];
 
 for (const urlOrPath of argv._) {
   const name = urlOrPath.split("/").pop().replace(".git", "");
   console.log(name);
 
   let path = urlOrPath;
-  if (urlOrPath.startsWith("ssh://")) {
+  if (urlOrPath.startsWith("git@")) {
     path = `${REPOS_PATH}/${name}`;
 
     if (!fs.pathExistsSync(path)) {
@@ -36,18 +37,16 @@ for (const urlOrPath of argv._) {
   await within(async () => {
     cd(path);
 
-    await $`git checkout master -f`;
+    await $`git checkout main -f`;
     await $`git pull`;
 
-    const loc = await getLOC();
+    const data = [name];
+    data.push(await getLOC());
+    for (const year of pastYears) {
+      data.push(await getPastLOC(year));
+    }
 
-    const loc2 = await getPastLOC("2023-01-01");
-
-    const loc3 = await getPastLOC("2022-01-01");
-
-    const loc4 = await getPastLOC("2021-01-01");
-
-    tableData.push([name, loc, loc2, loc3, loc4]);
+    tableData.push(data);
   });
 }
 
@@ -65,19 +64,19 @@ console.log(
 );
 
 async function getPastLOC(pastDate) {
-  await $`git checkout $(git rev-list -n 1 --first-parent --before="${pastDate} 00:00" master)`;
+  await $`git checkout $(git rev-list -n 1 --first-parent --before="${pastDate} 00:00" main)`;
   await $`prettier --print-width 120 --write "**/*.{js,html,css,tsx,ts,jsx}"`;
 
   const loc = await getLOC();
 
-  await $`git reset --hard master`;
+  await $`git reset --hard main`;
   return loc;
 }
 
 async function getLOC() {
-  $.verbose = true;
+  $.verbose = false;
   const clocOutput =
-    await $`cloc ${defaultClocArgs} --not-match-f=.\\(spec\\|stories\\|lock\\) --not-match-d=\\(cypress\|test\\|mock\\|shared\\/shell\\)`;
+    await $`cloc ${defaultClocArgs} --not-match-f=.\\(spec\\|stories\\|lock\\) --not-match-d=\\(cypress\\|test\\|mock\\|shared\\/shell\\)`;
   $.verbose = false;
   const clocJson = JSON.parse(clocOutput.stdout);
 
